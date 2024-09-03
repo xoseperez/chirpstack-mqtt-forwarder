@@ -26,13 +26,13 @@ build-armv7-unknown-linux-musleabihf:
 
 build-mips-unknown-linux-musl:
 	# mips is a tier-3 target.
-	rustup toolchain add nightly-2024-02-18-x86_64-unknown-linux-gnu
-	cross +nightly-2024-02-18 build -Z build-std=panic_abort,std --target mips-unknown-linux-musl --release --no-default-features --features semtech_udp
+	rustup toolchain add nightly-2024-05-17-x86_64-unknown-linux-gnu
+	cross +nightly-2024-05-17 build -Z build-std=panic_abort,std --target mips-unknown-linux-musl --release --no-default-features --features semtech_udp
 
 build-mipsel-unknown-linux-musl:
 	# mipsel is a tier-3 target.
-	rustup toolchain add nightly-2024-02-18-x86_64-unknown-linux-gnu
-	cross +nightly-2024-02-18 build -Z build-std=panic_abort,std --target mipsel-unknown-linux-musl --release --no-default-features --features semtech_udp
+	rustup toolchain add nightly-2024-05-17-x86_64-unknown-linux-gnu
+	cross +nightly-2024-05-17 build -Z build-std=panic_abort,std --target mipsel-unknown-linux-musl --release --no-default-features --features semtech_udp
 
 # Build distributable binaries for all targets.
 # Keep these in this order, as aarch64 is based on Debian Buster (older),
@@ -159,4 +159,4 @@ devshell:
 
 # Enter the Docker based devshell.
 docker-devshell:
-	docker-compose run --rm chirpstack-mqtt-forwarder
+	docker compose run --rm chirpstack-mqtt-forwarder

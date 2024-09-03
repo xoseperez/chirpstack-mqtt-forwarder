@@ -13,7 +13,6 @@ use rumqttc::v5::mqttbytes::v5::{ConnectReturnCode, LastWill, Publish};
 use rumqttc::v5::{mqttbytes::QoS, AsyncClient, Event, Incoming, MqttOptions};
 use rumqttc::Transport;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer};
-use serde::Serialize;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 
@@ -22,24 +21,6 @@ use crate::commands;
 use crate::config::Configuration;
 
 static STATE: OnceCell<Arc<State>> = OnceCell::new();
-
-#[derive(Serialize)]
-struct CommandTopicContext {
-    pub gateway_id: String,
-    pub command: String,
-}
-
-#[derive(Serialize)]
-struct EventTopicContext {
-    pub gateway_id: String,
-    pub event: String,
-}
-
-#[derive(Serialize)]
-struct StateTopciContext {
-    pub gateway_id: String,
-    pub state: String,
-}
 
 struct State {
     client: AsyncClient,
@@ -237,9 +218,13 @@ pub async fn setup(conf: &Configuration) -> Result<()> {
 
                         match v {
                             Event::Incoming(Incoming::Publish(p)) => {
-                                if let Err(e) = message_callback(p).await {
-                                    error!("Handling message error, error: {}", e);
-                                }
+                                tokio::spawn({
+                                    async move {
+                                        if let Err(e) = message_callback(p).await {
+                                            error!("Handling message error, error: {}", e);
+                                        }
+                                    }
+                                });
                             }
                             Event::Incoming(Incoming::ConnAck(v)) => {
                                 if v.code == ConnectReturnCode::Success {
@@ -299,6 +284,21 @@ pub async fn send_gateway_stats(pl: &gw::GatewayStats) -> Result<()> {
     let topic = get_event_topic(&state.topic_prefix, &state.gateway_id, "stats");
 
     info!("Sending gateway stats event, topic: {}", topic);
+    state.client.publish(topic, state.qos, false, b).await?;
+    trace!("Message published");
+
+    Ok(())
+}
+
+pub async fn send_mesh_heartbeat(pl: &gw::MeshHeartbeat) -> Result<()> {
+    let state = STATE.get().ok_or_else(|| anyhow!("STATE is not set"))?;
+
+    let b = match state.json {
+        true => serde_json::to_vec(&pl)?,
+        false => pl.encode_to_vec(),
+    };
+    let topic = get_event_topic(&state.topic_prefix, &state.gateway_id, "mesh-heartbeat");
+    info!("Sending mesh heartbeat event, topic: {}", topic);
     state.client.publish(topic, state.qos, false, b).await?;
     trace!("Message published");
 
