@@ -3,9 +3,8 @@ use std::convert::TryInto;
 use std::time::Duration;
 
 use anyhow::Result;
-use chirpstack_api::{common, gw};
+use chirpstack_api::{common, gw, pbjson_types};
 use chrono::{DateTime, Utc};
-use rand::Rng;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
@@ -353,6 +352,9 @@ pub struct RxPk {
     /// Concentrator board used for RX (unsigned integer).
     #[serde(default)]
     pub brd: u32,
+    /// Antenna number on which signal has been received.
+    #[serde(default)]
+    pub ant: u8,
     /// CRC status: 1 = OK, -1 = fail, 0 = no CRC
     pub stat: Crc,
     /// Modulation identifier "LORA" or "Fsk"
@@ -385,8 +387,7 @@ impl RxPk {
         gateway_id: &[u8],
         time_fallback_enabled: bool,
     ) -> Result<Vec<gw::UplinkFrame>> {
-        let mut rng = rand::thread_rng();
-        let uplink_id = if cfg!(test) { 123 } else { rng.gen::<u32>() };
+        let uplink_id: u32 = if cfg!(test) { 123 } else { getrandom::u32()? };
 
         let pl = gw::UplinkFrame {
             phy_payload: self.data.clone(),
@@ -464,7 +465,7 @@ impl RxPk {
                 channel: self.chan,
                 rf_chain: self.rfch,
                 board: self.brd,
-                antenna: 0,
+                antenna: self.ant.into(),
                 location: None,
                 context: self.tmst.to_be_bytes().to_vec(),
                 metadata: self.meta.as_ref().cloned().unwrap_or_default(),
@@ -483,7 +484,7 @@ impl RxPk {
         } else {
             let mut out: Vec<gw::UplinkFrame> = vec![];
             for rs in &self.rsig {
-                let uplink_id = if cfg!(test) { 123 } else { rng.gen::<u32>() };
+                let uplink_id: u32 = if cfg!(test) { 123 } else { getrandom::u32()? };
 
                 let mut pl = pl.clone();
                 let rx_info = pl.rx_info.as_mut().unwrap();
@@ -526,7 +527,7 @@ pub struct Stat {
     pub long: f64,
     /// GPS altitude of the gateway in meter RX (integer).
     #[serde(default)]
-    pub alti: u32,
+    pub alti: f64,
     /// Number of radio packets received (unsigned integer).
     pub rxnb: u32,
     /// Number of radio packets received with a valid PHY CRC.
@@ -549,11 +550,11 @@ impl Stat {
             gateway_id: hex::encode(gateway_id),
             time: Some(pbjson_types::Timestamp::from(self.time)),
             location: {
-                if self.lati != 0.0 || self.long != 0.0 || self.alti != 0 {
+                if self.lati != 0.0 || self.long != 0.0 || self.alti != 0.0 {
                     Some(common::Location {
                         latitude: self.lati,
                         longitude: self.long,
-                        altitude: self.alti.into(),
+                        altitude: self.alti,
                         source: common::LocationSource::Gps.into(),
                         ..Default::default()
                     })
@@ -677,11 +678,10 @@ impl PullResp {
                             timestamp.copy_from_slice(&tx_info.context[0..4]);
                             let mut timestamp = u32::from_be_bytes(timestamp);
 
-                            let delay = v
+                            let delay = *v
                                 .delay
                                 .as_ref()
-                                .ok_or_else(|| anyhow!("delay is missing"))?
-                                .clone();
+                                .ok_or_else(|| anyhow!("delay is missing"))?;
                             let delay: Duration = delay.try_into()?;
                             timestamp += delay.as_micros() as u32;
                             Some(timestamp)
@@ -690,11 +690,10 @@ impl PullResp {
                     },
                     tmms: match timing_params {
                         gw::timing::Parameters::GpsEpoch(v) => {
-                            let gps_time = v
+                            let gps_time = *v
                                 .time_since_gps_epoch
                                 .as_ref()
-                                .ok_or_else(|| anyhow!("time_since_gps_epoch is missing"))?
-                                .clone();
+                                .ok_or_else(|| anyhow!("time_since_gps_epoch is missing"))?;
                             let gps_time: Duration = gps_time.try_into()?;
                             Some(gps_time.as_millis() as u64)
                         }
@@ -784,8 +783,10 @@ pub struct TxPk {
     /// Concentrator board used for RX (unsigned integer).
     pub brd: u8,
     /// Send packet on a certain timestamp value (will ignore time).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tmst: Option<u32>,
     /// Send packet at a certain GPS time (GPS synchronization required).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tmms: Option<u64>,
     /// TX central frequency in MHz (unsigned float, Hz precision).
     pub freq: f64,
@@ -794,14 +795,19 @@ pub struct TxPk {
     /// LoRa datarate identifier (eg. SF12BW500) || FSK datarate (unsigned, in bits per second).
     pub datr: DataRate,
     /// LoRa ECC coding rate identifier.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub codr: Option<CodeRate>,
     /// FSK frequency deviation (unsigned integer, in Hz).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub fdev: Option<u16>,
     /// If true, disable the CRC of the physical layer (optional).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ncrc: Option<bool>,
     /// Lora modulation polarization inversion.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ipol: Option<bool>,
     /// RF preamble size (unsigned integer).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub prea: Option<u16>,
     /// RF packet payload size in bytes (unsigned integer).
     pub size: u16,
@@ -969,7 +975,7 @@ mod test {
                     time: now,
                     lati: 0.0,
                     long: 0.0,
-                    alti: 0,
+                    alti: 0.0,
                     rxnb: 10,
                     rxok: 5,
                     rxfw: 5,
@@ -1009,7 +1015,7 @@ mod test {
                     time: now,
                     lati: 1.1,
                     long: 2.2,
-                    alti: 3,
+                    alti: -3.3,
                     rxnb: 10,
                     rxok: 5,
                     rxfw: 5,
@@ -1031,7 +1037,7 @@ mod test {
                 location: Some(common::Location {
                     latitude: 1.1,
                     longitude: 2.2,
-                    altitude: 3.0,
+                    altitude: -3.3,
                     source: common::LocationSource::Gps.into(),
                     ..Default::default()
                 }),
@@ -1055,7 +1061,7 @@ mod test {
                     time: now,
                     lati: 0.0,
                     long: 0.0,
-                    alti: 0,
+                    alti: 0.0,
                     rxnb: 10,
                     rxok: 5,
                     rxfw: 5,
@@ -1123,6 +1129,7 @@ mod test {
                     chan: 5,
                     rfch: 1,
                     brd: 3,
+                    ant: 1,
                     stat: Crc::Ok,
                     modu: Modulation::Lora,
                     datr: DataRate::Lora(7, 125000),
@@ -1165,6 +1172,7 @@ mod test {
                     channel: 5,
                     rf_chain: 1,
                     board: 3,
+                    antenna: 1,
                     context: vec![0, 0, 4, 210],
                     crc_status: gw::CrcStatus::CrcOk.into(),
                     ..Default::default()
@@ -1193,6 +1201,7 @@ mod test {
                     chan: 5,
                     rfch: 1,
                     brd: 3,
+                    ant: 1,
                     stat: Crc::Ok,
                     modu: Modulation::Lora,
                     datr: DataRate::Lora(7, 125000),
@@ -1238,6 +1247,7 @@ mod test {
                     channel: 5,
                     rf_chain: 1,
                     board: 3,
+                    antenna: 1,
                     context: vec![0, 0, 4, 210],
                     crc_status: gw::CrcStatus::CrcOk.into(),
                     ..Default::default()
@@ -1266,6 +1276,7 @@ mod test {
                     chan: 5,
                     rfch: 1,
                     brd: 3,
+                    ant: 1,
                     stat: Crc::Ok,
                     modu: Modulation::Lora,
                     datr: DataRate::Lora(7, 125000),
@@ -1314,6 +1325,7 @@ mod test {
                     channel: 5,
                     rf_chain: 1,
                     board: 3,
+                    antenna: 1,
                     context: vec![0, 0, 4, 210],
                     crc_status: gw::CrcStatus::CrcOk.into(),
                     ..Default::default()
@@ -1342,6 +1354,7 @@ mod test {
                     chan: 0,
                     rfch: 1,
                     brd: 3,
+                    ant: 0,
                     stat: Crc::Ok,
                     modu: Modulation::Lora,
                     datr: DataRate::Lora(7, 125000),
@@ -1458,6 +1471,7 @@ mod test {
                     chan: 5,
                     rfch: 1,
                     brd: 3,
+                    ant: 1,
                     stat: Crc::Ok,
                     modu: Modulation::Fsk,
                     datr: DataRate::Fsk(50_000),
@@ -1495,6 +1509,7 @@ mod test {
                     channel: 5,
                     rf_chain: 1,
                     board: 3,
+                    antenna: 1,
                     context: vec![0, 0, 4, 210],
                     crc_status: gw::CrcStatus::CrcOk.into(),
                     ..Default::default()
@@ -1523,6 +1538,7 @@ mod test {
                     chan: 5,
                     rfch: 1,
                     brd: 3,
+                    ant: 1,
                     stat: Crc::Ok,
                     modu: Modulation::LrFhss,
                     datr: DataRate::LrFhss(137_000),
@@ -1564,6 +1580,7 @@ mod test {
                     channel: 5,
                     rf_chain: 1,
                     board: 3,
+                    antenna: 1,
                     context: vec![0, 0, 4, 210],
                     crc_status: gw::CrcStatus::CrcOk.into(),
                     ..Default::default()
@@ -1592,6 +1609,7 @@ mod test {
                     chan: 5,
                     rfch: 1,
                     brd: 3,
+                    ant: 1,
                     stat: Crc::Ok,
                     modu: Modulation::Lora,
                     datr: DataRate::Lora(7, 125000),
@@ -1639,6 +1657,7 @@ mod test {
                     channel: 5,
                     rf_chain: 1,
                     board: 3,
+                    antenna: 1,
                     context: vec![0, 0, 4, 210],
                     metadata: [("gateway_name".to_string(), "test-gateway".to_string())]
                         .iter()
@@ -1669,6 +1688,7 @@ mod test {
                     chan: 5,
                     rfch: 1,
                     brd: 3,
+                    ant: 1,
                     stat: Crc::Ok,
                     modu: Modulation::Lora,
                     datr: DataRate::Lora(7, 125000),
@@ -1704,6 +1724,7 @@ mod test {
                     chan: 5,
                     rfch: 1,
                     brd: 3,
+                    ant: 1,
                     stat: Crc::Ok,
                     modu: Modulation::Lora,
                     datr: DataRate::Lora(7, 125000),

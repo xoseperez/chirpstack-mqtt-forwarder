@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::fs;
 use std::time::Duration;
+use std::{env, fs};
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -13,14 +13,22 @@ pub struct Configuration {
     pub backend: Backend,
     pub metadata: Metadata,
     pub commands: HashMap<String, Vec<String>>,
+    pub callbacks: Callbacks,
 }
 
 impl Configuration {
     pub fn get(filenames: &[String]) -> Result<Configuration> {
         let mut content = String::new();
+
         for file_name in filenames {
             content.push_str(&fs::read_to_string(file_name)?);
         }
+
+        // Replace environment variables in config.
+        for (k, v) in env::vars() {
+            content = content.replace(&format!("${}", k), &v);
+        }
+
         let config: Configuration = toml::from_str(&content)?;
         Ok(config)
     }
@@ -58,6 +66,8 @@ pub struct Mqtt {
     pub ca_cert: String,
     pub tls_cert: String,
     pub tls_key: String,
+    #[serde(with = "humantime_serde")]
+    pub reconnect_interval: Duration,
 }
 
 impl Default for Mqtt {
@@ -75,6 +85,7 @@ impl Default for Mqtt {
             ca_cert: "".into(),
             tls_cert: "".into(),
             tls_key: "".into(),
+            reconnect_interval: Duration::from_secs(1),
         }
     }
 }
@@ -160,4 +171,11 @@ impl Default for SemtechUdp {
 pub struct Metadata {
     pub r#static: HashMap<String, String>,
     pub commands: HashMap<String, Vec<String>>,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct Callbacks {
+    pub on_mqtt_connected: Vec<String>,
+    pub on_mqtt_connection_error: Vec<String>,
 }

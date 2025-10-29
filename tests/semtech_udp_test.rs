@@ -3,13 +3,12 @@ use std::io::Cursor;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use prost::Message;
 use rumqttc::v5::{mqttbytes::QoS, AsyncClient, Event, Incoming, MqttOptions};
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 
-use chirpstack_api::{common, gw};
+use chirpstack_api::{common, gw, pbjson_types, prost::Message};
 use chirpstack_mqtt_forwarder::config;
 
 #[tokio::test]
@@ -56,12 +55,10 @@ async fn end_to_end() {
     tokio::spawn({
         async move {
             loop {
-                match eventloop.poll().await {
-                    Ok(v) => match v {
-                        Event::Incoming(Incoming::Publish(p)) => mqtt_tx.send(p).await.unwrap(),
-                        _ => {}
-                    },
-                    Err(_) => {}
+                if let Ok(v) = eventloop.poll().await {
+                    if let Event::Incoming(Incoming::Publish(p)) = v {
+                        mqtt_tx.send(p).await.unwrap()
+                    }
                 }
             }
         }
@@ -139,7 +136,7 @@ async fn end_to_end() {
         .unwrap()
         .with_timezone(&Utc);
     let mut b = vec![2, 0, 1, 0, 1, 2, 3, 4, 5, 6, 7, 8];
-    b.extend_from_slice(&mut pl_b.as_bytes());
+    b.extend_from_slice(pl_b.as_bytes());
     socket.send(&b).await.unwrap();
 
     // PUSH_ACK
@@ -171,7 +168,7 @@ async fn end_to_end() {
             }),
             rx_info: Some(gw::UplinkRxInfo {
                 gateway_id: "0102030405060708".into(),
-                gw_time: Some(pbjson_types::Timestamp::from(ts.clone())),
+                gw_time: Some(pbjson_types::Timestamp::from(ts)),
                 rssi: -35,
                 snr: 5.1,
                 channel: 2,
@@ -229,7 +226,7 @@ async fn end_to_end() {
     let size = socket.recv(&mut buffer).await.unwrap();
     assert_eq!(&[2, 210, 4, 3], &buffer[..4]);
     let json = String::from_utf8_lossy(&buffer[4..size]);
-    assert_eq!("{\"txpk\":{\"imme\":false,\"rfch\":0,\"powe\":16,\"ant\":0,\"brd\":0,\"tmst\":1001234,\"tmms\":null,\"freq\":868.3,\"modu\":\"LORA\",\"datr\":\"SF8BW125\",\"codr\":\"4/5\",\"fdev\":null,\"ncrc\":null,\"ipol\":false,\"prea\":null,\"size\":3,\"data\":\"AQID\"}}", json);
+    assert_eq!("{\"txpk\":{\"imme\":false,\"rfch\":0,\"powe\":16,\"ant\":0,\"brd\":0,\"tmst\":1001234,\"freq\":868.3,\"modu\":\"LORA\",\"datr\":\"SF8BW125\",\"codr\":\"4/5\",\"ipol\":false,\"size\":3,\"data\":\"AQID\"}}", json);
 
     // TX_ACK
     socket
@@ -272,7 +269,7 @@ async fn end_to_end() {
             }
         }"#;
     let mut b = vec![2, 0, 1, 0, 1, 2, 3, 4, 5, 6, 7, 8];
-    b.extend_from_slice(&mut pl_b.as_bytes());
+    b.extend_from_slice(pl_b.as_bytes());
     socket.send(&b).await.unwrap();
 
     // PUSH_ACK

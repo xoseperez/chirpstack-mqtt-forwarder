@@ -85,7 +85,7 @@ pub fn run(config: &Configuration) {
   #
   # This defines the maximum time that that should pass without communication
   # between the client and server.
-  keep_alive_interval="{{ integration.mqtt.keep_alive_interval }}"
+  keep_alive_interval="{{ mqtt.keep_alive_interval }}"
 
   # CA certificate file (optional)
   #
@@ -99,6 +99,12 @@ pub fn run(config: &Configuration) {
 
   # TLS key file (optional)
   tls_key="{{ mqtt.tls_key }}"
+
+  # Reconnect interval.
+  #
+  # This defines the reconnection interval to the MQTT broker in case of
+  # network issues.
+  reconnect_interval="{{ integration.mqtt.reconnect_interval }}"
 
 
 # Backend configuration.
@@ -222,6 +228,22 @@ pub fn run(config: &Configuration) {
     {{/each}}
   ]
   {{/each}}
+
+
+# Callback commands.
+#
+# These are commands that are triggered by certain events (e.g. MQTT connected
+# or error). These commands are intended to e.g. trigger a LED of a gateway.
+# Commands are configured as an array, where the first item is the path to the
+# command, and the (optional) remaining elements are the arguments. An empty
+# array disables the callback.
+[callbacks]
+
+  # On MQTT connected.
+  on_mqtt_connected=[]
+
+  # On MQTT connection error.
+  on_mqtt_connection_error=[]
 "#;
 
     let reg = Handlebars::new();
