@@ -247,6 +247,7 @@ impl Backend {
             filters: lrwn_filters::Filters {
                 dev_addr_prefixes: conf.backend.filters.dev_addr_prefixes.clone(),
                 join_eui_prefixes: conf.backend.filters.join_eui_prefixes.clone(),
+                lorawan_only: conf.backend.filters.lorawan_only,
             },
         };
         let state = Arc::new(state);
@@ -362,8 +363,8 @@ async fn handle_push_data(state: &Arc<State>, data: &[u8], remote: &SocketAddr) 
     let gateway_stats = pl.to_proto_gateway_stats()?;
 
     for uf in &uplink_frames {
-        if let Some(rx_info) = &uf.rx_info {
-            if !((rx_info.crc_status() == gw::CrcStatus::CrcOk && state.forward_crc_ok)
+        if let Some(rx_info) = &uf.rx_info
+            && !((rx_info.crc_status() == gw::CrcStatus::CrcOk && state.forward_crc_ok)
                 || (rx_info.crc_status() == gw::CrcStatus::BadCrc && state.forward_crc_invalid)
                 || (rx_info.crc_status() == gw::CrcStatus::NoCrc && state.forward_crc_missing))
             {
@@ -374,7 +375,6 @@ async fn handle_push_data(state: &Arc<State>, data: &[u8], remote: &SocketAddr) 
 
                 continue;
             }
-        }
 
         if lrwn_filters::matches(&uf.phy_payload, &state.filters) {
             state.count_uplink(uf).await?;

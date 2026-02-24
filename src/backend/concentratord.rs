@@ -76,6 +76,7 @@ impl Backend {
             let filters = lrwn_filters::Filters {
                 dev_addr_prefixes: conf.backend.filters.dev_addr_prefixes.clone(),
                 join_eui_prefixes: conf.backend.filters.join_eui_prefixes.clone(),
+                lorawan_only: conf.backend.filters.lorawan_only,
             };
 
             async move {
@@ -275,8 +276,8 @@ async fn handle_event_msg(
 ) -> Result<()> {
     match event.event {
         Some(gw::event::Event::UplinkFrame(v)) => {
-            if let Some(rx_info) = &v.rx_info {
-                if !((rx_info.crc_status() == gw::CrcStatus::CrcOk && forward_crc_ok)
+            if let Some(rx_info) = &v.rx_info
+                && !((rx_info.crc_status() == gw::CrcStatus::CrcOk && forward_crc_ok)
                     || (rx_info.crc_status() == gw::CrcStatus::BadCrc && forward_crc_invalid)
                     || (rx_info.crc_status() == gw::CrcStatus::NoCrc && forward_crc_missing))
                 {
@@ -286,7 +287,6 @@ async fn handle_event_msg(
                     );
                     return Ok(());
                 }
-            }
 
             if lrwn_filters::matches(&v.phy_payload, filters) {
                 info!(

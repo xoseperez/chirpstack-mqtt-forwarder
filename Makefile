@@ -26,13 +26,13 @@ build-armv7-unknown-linux-musleabihf:
 
 build-mips-unknown-linux-musl:
 	# mips is a tier-3 target.
-	rustup toolchain add nightly-2025-02-14-x86_64-unknown-linux-gnu
-	cross +nightly-2025-02-14 build -Z build-std=panic_abort,std --target mips-unknown-linux-musl --release --no-default-features --features semtech_udp
+	rustup toolchain add nightly-2026-01-27-x86_64-unknown-linux-gnu
+	cross +nightly-2026-01-27 build -Z build-std=panic_abort,std --target mips-unknown-linux-musl --release --no-default-features --features semtech_udp
 
 build-mipsel-unknown-linux-musl:
 	# mipsel is a tier-3 target.
-	rustup toolchain add nightly-2025-02-14-x86_64-unknown-linux-gnu
-	cross +nightly-2025-02-14 build -Z build-std=panic_abort,std --target mipsel-unknown-linux-musl --release --no-default-features --features semtech_udp
+	rustup toolchain add nightly-2026-01-27-x86_64-unknown-linux-gnu
+	cross +nightly-2026-01-27 build -Z build-std=panic_abort,std --target mipsel-unknown-linux-musl --release --no-default-features --features semtech_udp
 
 # Build distributable binaries for all targets.
 # Keep these in this order, as aarch64 is based on Debian Buster (older),
@@ -163,5 +163,5 @@ docker-devshell:
 
 # Dependencies
 dev-dependencies:
-	cargo install cross --git https://github.com/cross-rs/cross --rev c7dee4d008475ce1c140773cbcd6078f4b86c2aa --locked
+	cargo install cross --git https://github.com/cross-rs/cross --rev 452dc27a11d4f58d65309f8455c5cf7558f60513 --locked --root .cargo
 
