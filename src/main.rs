@@ -4,7 +4,8 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use log::info;
-use signal_hook::{consts::SIGINT, consts::SIGTERM, iterator::Signals};
+use tokio::signal::unix::{SignalKind, signal};
+use tokio::sync::broadcast;
 use tokio::time::sleep;
 
 use chirpstack_mqtt_forwarder::{backend, cmd, commands, config, logging, metadata, mqtt};
@@ -57,8 +58,34 @@ async fn main() {
     commands::setup(&config).expect("Setup commands error");
     metadata::setup(&config).expect("Setup metadata error");
     backend::setup(&config).await.expect("Setup backend error");
-    mqtt::setup(&config).await.expect("Setup MQTT client error");
 
-    let mut signals = Signals::new([SIGINT, SIGTERM]).unwrap();
-    signals.forever().next();
+    let (terminate_tx, _) = broadcast::channel::<()>(1);
+
+    // Signal handler.
+    tokio::spawn({
+        let terminate_tx = terminate_tx.clone();
+
+        async move {
+            let mut sighub = signal(SignalKind::hangup()).unwrap();
+            let mut sigint = signal(SignalKind::interrupt()).unwrap();
+            let mut sigterm = signal(SignalKind::terminate()).unwrap();
+
+            loop {
+                tokio::select! {
+                    Some(_) = sighub.recv() => {
+                        terminate_tx.send(()).unwrap();
+                    },
+                    Some(_) = sigint.recv() => process::exit(0),
+                    Some(_) = sigterm.recv() => process::exit(0),
+                }
+            }
+        }
+    });
+
+    loop {
+        let terminate_rx = terminate_tx.subscribe();
+        mqtt::run(&config, terminate_rx)
+            .await
+            .expect("Setup MQTT client error");
+    }
 }

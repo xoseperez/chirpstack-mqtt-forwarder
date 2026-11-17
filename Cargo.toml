@@ -4,7 +4,7 @@
   repository = "https://github.com/chirpstack/chirpstack-mqtt-forwarder"
   homepage = "https://www.chirpstack.io/"
   license = "MIT"
-  version = "4.6.1"
+  version = "4.7.0-test.2"
   authors = ["Orne Brocaar <info@brocaar.com>"]
   edition = "2024"
   publish = false
@@ -35,22 +35,15 @@
     "serde",
   ] }
   chrono = { version = "0.4", default-features = false, features = ["now"] }
-  signal-hook = "0.4"
   hex = "0.4"
   base64 = "0.23"
   getrandom = { version = "0.4", features = ["std"] }
-  rumqttc = { version = "0.25", default-features = false, features = [
+  rumqttc-next = { version = "0.34", default-features = false, features = [
     "url",
     "websocket",
-    "use-rustls-no-provider",
+    "use-rustls-ring",
   ] }
   url = "2.5"
-  rustls = { version = "0.23", default-features = false, features = [
-    "logging",
-    "std",
-    "tls12",
-    "ring",
-  ] }
   rustls-native-certs = "0.8"
   rustls-pemfile = "2.2"
   rustls-pki-types = "1.15"
@@ -63,6 +56,7 @@
     "io-util",
     "sync",
     "time",
+    "signal",
   ] }
   async-trait = "0.1"
   zmq = { version = "0.10", optional = true }
