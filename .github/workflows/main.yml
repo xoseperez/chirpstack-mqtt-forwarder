@@ -43,7 +43,8 @@ jobs:
   dist:
     needs: tests
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Publishing needs upstream's AWS credentials; forks use fork-release.yml.
+    if: startsWith(github.ref, 'refs/tags/v') && github.repository == 'chirpstack/chirpstack-mqtt-forwarder'
     strategy:
       matrix:
         target:
@@ -91,3 +92,11 @@ jobs:
         run: |
           aws s3 sync dist s3://builds.loraserver.io/chirpstack-mqtt-forwarder
         if: startsWith(github.ref, 'refs/tags/v')
+
+  # Fork releases (v<upstream version>-r<n> tags), built only once the tests pass.
+  fork-release:
+    needs: tests
+    if: github.repository != 'chirpstack/chirpstack-mqtt-forwarder' && startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-r')
+    permissions:
+      contents: write
+    uses: ./.github/workflows/fork-release.yml
