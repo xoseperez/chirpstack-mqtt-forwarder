@@ -4,19 +4,19 @@
   repository = "https://github.com/chirpstack/chirpstack-mqtt-forwarder"
   homepage = "https://www.chirpstack.io/"
   license = "MIT"
-  version = "4.5.1"
+  version = "4.6.1"
   authors = ["Orne Brocaar <info@brocaar.com>"]
   edition = "2024"
   publish = false
 
 [dependencies]
-  clap = { version = "4.5", default-features = false, features = [
+  clap = { version = "4.6", default-features = false, features = [
     "std",
     "help",
     "usage",
     "derive",
   ] }
-  chirpstack_api = { version = "4.16", default-features = false, features = [
+  chirpstack_api = { version = "4.19", default-features = false, features = [
     "json",
   ] }
   lrwn_filters = { version = "4.16", features = ["serde"] }
@@ -24,12 +24,12 @@
   serde = { version = "1.0", features = ["derive"] }
   humantime-serde = "1.1"
   log = "0.4"
-  simple_logger = { version = "5.1", default-features = false, features = [
+  simple_logger = { version = "5.2", default-features = false, features = [
     "timestamps",
   ] }
   syslog = "7.0"
   anyhow = "1.0"
-  toml = { version = "0.9", default-features = false, features = [
+  toml = { version = "1.1", default-features = false, features = [
     "std",
     "parse",
     "serde",
@@ -37,7 +37,7 @@
   chrono = { version = "0.4", default-features = false, features = ["now"] }
   signal-hook = "0.4"
   hex = "0.4"
-  base64 = "0.22"
+  base64 = "0.23"
   getrandom = { version = "0.4", features = ["std"] }
   rumqttc = { version = "0.25", default-features = false, features = [
     "url",
@@ -53,9 +53,9 @@
   ] }
   rustls-native-certs = "0.8"
   rustls-pemfile = "2.2"
-  rustls-pki-types = "1.12"
+  rustls-pki-types = "1.15"
   handlebars = "6.4"
-  tokio = { version = "1.49", features = [
+  tokio = { version = "1.53", features = [
     "macros",
     "rt-multi-thread",
     "net",
