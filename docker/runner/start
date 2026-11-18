@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+
+# Entry point of the ChirpStack MQTT Forwarder image: builds the configuration
+# from environment variables, then starts the forwarder.
+#
+#   bash start            start the forwarder
+#   bash start --render   print the configuration and exit
+
+source ./common.sh
+
+# Turn a list such as "0000ff00/24, 00000000/8" into the items of a TOML array
+# of strings. Quotes in the input are dropped, so values written for the old
+# template as '"0000ff00/24"' keep working.
+toml_string_list() {
+    local item raw items=()
+    IFS=', ' read -r -a raw <<< "${1//\"/}"
+    for item in "${raw[@]}"; do
+        [[ -n "${item}" ]] && items+=("\"${item}\"")
+    done
+    local IFS=,
+    printf '%s' "${items[*]}"
+}
+
+# -----------------------------------------------------------------------------
+# Defaults
+# -----------------------------------------------------------------------------
+
+env_alias SOCKET_NAME BACKEND_SOCKET_NAME
+
+LOGGING_LEVEL=${LOGGING_LEVEL:-"INFO"}
+LOGGING_LEVEL=${LOGGING_LEVEL^^}
+
+MQTT_TOPIC_PREFIX=${MQTT_TOPIC_PREFIX:-"eu868"}
+MQTT_SERVER=${MQTT_SERVER:-"tcp://mosquitto:1883"}
+MQTT_USERNAME=${MQTT_USERNAME:-""}
+MQTT_PASSWORD=${MQTT_PASSWORD:-""}
+MQTT_QOS=${MQTT_QOS:-0}
+MQTT_CA_CERT_PATH=${MQTT_CA_CERT_PATH:-""}
+MQTT_CLIENT_CERT_PATH=${MQTT_CLIENT_CERT_PATH:-""}
+MQTT_CLIENT_KEY_PATH=${MQTT_CLIENT_KEY_PATH:-""}
+MQTT_JSON=${MQTT_JSON:-"false"}
+MQTT_JSON=${MQTT_JSON,,}
+
+# KEEPALIVE_INTERVAL is in seconds, as in the other images. The old
+# KEEP_ALIVE_INTERVAL took a duration such as "30s" and is used as given.
+if [[ -z "${KEEPALIVE_INTERVAL:-}" && -n "${KEEP_ALIVE_INTERVAL:-}" ]]; then
+    warn "KEEP_ALIVE_INTERVAL is deprecated, use KEEPALIVE_INTERVAL (in seconds) instead"
+    MQTT_KEEP_ALIVE=${KEEP_ALIVE_INTERVAL}
+else
+    KEEPALIVE_INTERVAL=${KEEPALIVE_INTERVAL:-30}
+    MQTT_KEEP_ALIVE="${KEEPALIVE_INTERVAL}s"
+fi
+
+BACKEND=${BACKEND:-"concentratord"}
+BACKEND=${BACKEND,,}
+SOCKET_NAME=${SOCKET_NAME:-"concentratord"}
+BACKEND_UDP_BIND=${BACKEND_UDP_BIND:-"0.0.0.0:1700"}
+BACKEND_FILTER_DEVADDR=${BACKEND_FILTER_DEVADDR:-""}
+BACKEND_FILTER_JOINEUI=${BACKEND_FILTER_JOINEUI:-""}
+
+# -----------------------------------------------------------------------------
+# Checks
+# -----------------------------------------------------------------------------
+
+# The forwarder has no OFF level: it refuses to start with one.
+if [[ ! "${LOGGING_LEVEL}" =~ ^(TRACE|DEBUG|INFO|WARN|ERROR)$ ]]; then
+    fail "LOGGING_LEVEL must be one of TRACE, DEBUG, INFO, WARN or ERROR (got '${LOGGING_LEVEL}')"
+fi
+if [[ ! "${MQTT_QOS}" =~ ^[012]$ ]]; then
+    fail "MQTT_QOS must be 0, 1 or 2 (got '${MQTT_QOS}')"
+fi
+if [[ ! "${MQTT_JSON}" =~ ^(true|false)$ ]]; then
+    fail "MQTT_JSON must be true or false (got '${MQTT_JSON}')"
+fi
+if [[ -n "${KEEPALIVE_INTERVAL:-}" && ! "${KEEPALIVE_INTERVAL}" =~ ^[0-9]+$ ]]; then
+    fail "KEEPALIVE_INTERVAL must be a number of seconds (got '${KEEPALIVE_INTERVAL}')"
+fi
+if [[ "${BACKEND}" != "concentratord" && "${BACKEND}" != "semtech_udp" ]]; then
+    fail "BACKEND must be either 'concentratord' or 'semtech_udp' (got '${BACKEND}')"
+fi
+
+# The image runs as nobody, so mounted certificates must be readable by it.
+for VAR in MQTT_CA_CERT_PATH MQTT_CLIENT_CERT_PATH MQTT_CLIENT_KEY_PATH; do
+    if [[ -n "${!VAR}" && ! -r "${!VAR}" ]]; then
+        fail "${VAR} is ${!VAR}, but that file is missing or not readable by $(id -un)"
+    fi
+done
+
+# -----------------------------------------------------------------------------
+# Configuration
+# -----------------------------------------------------------------------------
+
+CONFIG_FILE=./run/config.toml
+
+# Free text goes inside TOML strings; the filters become TOML arrays.
+MQTT_USERNAME=$(toml_escape "${MQTT_USERNAME}")
+MQTT_PASSWORD=$(toml_escape "${MQTT_PASSWORD}")
+MQTT_CA_CERT_PATH=$(toml_escape "${MQTT_CA_CERT_PATH}")
+MQTT_CLIENT_CERT_PATH=$(toml_escape "${MQTT_CLIENT_CERT_PATH}")
+MQTT_CLIENT_KEY_PATH=$(toml_escape "${MQTT_CLIENT_KEY_PATH}")
+BACKEND_FILTER_DEVADDR=$(toml_string_list "${BACKEND_FILTER_DEVADDR}")
+BACKEND_FILTER_JOINEUI=$(toml_string_list "${BACKEND_FILTER_JOINEUI}")
+
+render chirpstack-mqtt-forwarder.toml.template "${CONFIG_FILE}" \
+    LOGGING_LEVEL \
+    MQTT_TOPIC_PREFIX MQTT_JSON MQTT_SERVER MQTT_USERNAME MQTT_PASSWORD MQTT_QOS \
+    MQTT_KEEP_ALIVE MQTT_CA_CERT_PATH MQTT_CLIENT_CERT_PATH MQTT_CLIENT_KEY_PATH \
+    BACKEND BACKEND_FILTER_DEVADDR BACKEND_FILTER_JOINEUI SOCKET_NAME BACKEND_UDP_BIND
+
+if [[ "${1:-}" == "--render" ]]; then
+    cat "${CONFIG_FILE}"
+    exit 0
+fi
+
+# -----------------------------------------------------------------------------
+# Info
+# -----------------------------------------------------------------------------
+
+echo
+info "------------------------------------------------------------------"
+info "$( ./chirpstack-mqtt-forwarder -V )"
+info "LoRa(WAN) packet forwarder based on MQTT"
+info "------------------------------------------------------------------"
+info "Logging level:        ${LOGGING_LEVEL}"
+info "MQTT broker:          ${MQTT_SERVER}"
+info "MQTT topic prefix:    ${MQTT_TOPIC_PREFIX}"
+if [[ -n "${MQTT_USERNAME}" ]]; then
+    info "MQTT username:        ${MQTT_USERNAME}"
+fi
+if [[ -n "${MQTT_PASSWORD}" ]]; then
+    info "MQTT password:        (set)"
+fi
+info "MQTT QoS:             ${MQTT_QOS}"
+info "MQTT keepalive:       ${MQTT_KEEP_ALIVE}"
+if [[ -n "${MQTT_CA_CERT_PATH}" ]]; then
+    info "MQTT CA cert:         ${MQTT_CA_CERT_PATH}"
+fi
+if [[ -n "${MQTT_CLIENT_CERT_PATH}" ]]; then
+    info "MQTT TLS cert:        ${MQTT_CLIENT_CERT_PATH}"
+fi
+if [[ -n "${MQTT_CLIENT_KEY_PATH}" ]]; then
+    info "MQTT TLS key:         ${MQTT_CLIENT_KEY_PATH}"
+fi
+if [[ "${MQTT_JSON}" == "true" ]]; then
+    info "MQTT encoding:        JSON"
+fi
+info "Backend:              ${BACKEND}"
+if [[ "${BACKEND}" == "concentratord" ]]; then
+    info "Socket name:          ${SOCKET_NAME}"
+else
+    info "UDP bind:             ${BACKEND_UDP_BIND}"
+fi
+if [[ -n "${BACKEND_FILTER_DEVADDR}" ]]; then
+    info "Filter by DevAddr:    ${BACKEND_FILTER_DEVADDR}"
+fi
+if [[ -n "${BACKEND_FILTER_JOINEUI}" ]]; then
+    info "Filter by Join EUI:   ${BACKEND_FILTER_JOINEUI}"
+fi
+info "------------------------------------------------------------------"
+info "Resources: https://www.chirpstack.io/docs/chirpstack-mqtt-forwarder"
+info "           https://github.com/chirpstack/chirpstack-mqtt-forwarder"
+info "------------------------------------------------------------------"
+echo
+
+# -----------------------------------------------------------------------------
+# Start
+# -----------------------------------------------------------------------------
+
+# Only the concentratord backend needs concentratord's sockets; the
+# semtech_udp backend listens for packet forwarders on BACKEND_UDP_BIND.
+if [[ "${BACKEND}" == "concentratord" ]]; then
+    wait_for_sockets "${SOCKET_NAME}"
+fi
+
+exec ./chirpstack-mqtt-forwarder -c "${CONFIG_FILE}"

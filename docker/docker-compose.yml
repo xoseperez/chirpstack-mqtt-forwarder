@@ -1,0 +1,132 @@
+services:
+
+  chirpstack-concentratord:
+
+    container_name: chirpstack-concentratord
+    image: xoseperez/chirpstack-concentratord
+    restart: unless-stopped
+
+    # Access to the concentrator, instead of running privileged
+    devices:
+      - /dev/ttyACM0        # USB concentrators
+    #  - /dev/spidev0.0     # SPI concentrators
+    #  - /dev/gpiochip0     # reset and power-enable GPIOs
+    group_add:
+      - "dialout"           # USB concentrators
+    #  - ${PGID_SPI:-999}   # SPI concentrators
+    #  - ${PGID_GPIO:-997}  # GPIOs
+
+    # IPC sockets shared with chirpstack-mqtt-forwarder
+    volumes:
+      - ipcfolder:/tmp
+
+    environment:
+      MODEL: "RAK7271"
+      INTERFACE: "USB"
+
+  mosquitto:
+
+    container_name: mosquitto
+    image: eclipse-mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+
+  chirpstack-mqtt-forwarder:
+
+    container_name: chirpstack-mqtt-forwarder
+    image: xoseperez/chirpstack-mqtt-forwarder
+    restart: unless-stopped
+
+    depends_on:
+      - chirpstack-concentratord
+      - mosquitto
+
+    # IPC sockets shared with chirpstack-concentratord
+    volumes:
+      - ipcfolder:/tmp
+
+    # Only for the semtech_udp backend: let packet forwarders reach it
+    #ports:
+    #  - "1700:1700/udp"
+
+    #secrets:
+    #  - ca.pem
+    #  - cert.pem
+    #  - key.pem
+
+    environment:
+
+      # Log level (TRACE, DEBUG, INFO, WARN, ERROR). Defaults to INFO.
+      LOGGING_LEVEL: "INFO"
+
+      # Topic prefix, messages will be sent to <prefix>/gateway/<gateway_id>/event/<event_type>
+      #MQTT_TOPIC_PREFIX: "eu868"
+
+      # MQTT broker (usually provided by the LNS)
+      MQTT_SERVER: "tcp://mosquitto:1883"
+
+      # MQTT username
+      #MQTT_USERNAME: ""
+
+      # MQTT password
+      #MQTT_PASSWORD: ""
+
+      # MQTT quality of service
+      #MQTT_QOS: 0
+
+      # Maximum time without traffic to the broker, in seconds
+      #KEEPALIVE_INTERVAL: 30
+
+      # Certificates, for instance as docker secrets (must be readable by user nobody)
+      #MQTT_CA_CERT_PATH: "/run/secrets/ca.pem"
+      #MQTT_CLIENT_CERT_PATH: "/run/secrets/cert.pem"
+      #MQTT_CLIENT_KEY_PATH: "/run/secrets/key.pem"
+
+      # Send MQTT messages as JSON instead of Protobuf (only for debugging purposes)
+      #MQTT_JSON: "false"
+
+      # Backend to use (either 'concentratord' or 'semtech_udp')
+      #BACKEND: "concentratord"
+
+      # Name of the socket to connect to when using the concentratord backend
+      # (this will connect to ipc:///tmp/<socket>_event and _command)
+      #SOCKET_NAME: "concentratord"
+
+      # Address to listen to UDP messages when using the semtech_udp backend
+      #BACKEND_UDP_BIND: "0.0.0.0:1700"
+
+      # DevAddr prefix filters, comma-separated.
+      #
+      # Example configuration:
+      # BACKEND_FILTER_DEVADDR: "0000ff00/24"
+      #
+      # The above filter means that the 24MSB of 0000ff00 will be used to
+      # filter DevAddrs. Uplinks with DevAddrs that do not match any of the
+      # configured filters will not be forwarded. Leaving this option empty
+      # disables filtering on DevAddr.
+      #BACKEND_FILTER_DEVADDR: ""
+
+      # JoinEUI prefix filters, comma-separated.
+      #
+      # Example configuration:
+      # BACKEND_FILTER_JOINEUI: "0000ff0000000000/24"
+      #
+      # The above filter means that the 24MSB of 0000ff0000000000 will be used
+      # to filter JoinEUIs. Uplinks with JoinEUIs that do not match any of the
+      # configured filters will not be forwarded. Leaving this option empty
+      # disables filtering on JoinEUI.
+      #BACKEND_FILTER_JOINEUI: ""
+
+#secrets:
+#  ca.pem:
+#    file: ca.pem
+#  cert.pem:
+#    file: cert.pem
+#  key.pem:
+#    file: key.pem
+
+volumes:
+  ipcfolder:
